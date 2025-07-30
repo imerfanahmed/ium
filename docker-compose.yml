@@ -1,0 +1,91 @@
+services:
+  php-apache:
+    build:
+      context: .
+      dockerfile: Dockerfile.php-apache
+    container_name: ium-php-apache
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./www:/var/www/html
+      - ./config/apache:/etc/apache2/sites-available
+      - ./config/php74:/etc/php/7.4
+      - ./config/php84:/etc/php/8.4
+      - ./logs/apache:/var/log/apache2
+    environment:
+      - APACHE_RUN_USER=www-data
+      - APACHE_RUN_GROUP=www-data
+      - APACHE_LOG_DIR=/var/log/apache2
+    depends_on:
+      - mariadb
+      - redis
+    networks:
+      - ium-network
+
+  mariadb:
+    image: mariadb:latest
+    container_name: ium-mariadb
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ium_default
+      MYSQL_USER: ium_user
+      MYSQL_PASSWORD: ium_password
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+      - ./config/mysql:/etc/mysql/conf.d
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    networks:
+      - ium-network
+
+  redis:
+    image: redis:alpine
+    container_name: ium-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+      - ./config/redis:/usr/local/etc/redis
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - ium-network
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: ium-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    networks:
+      - ium-network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: ium-phpmyadmin
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: mariadb
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - ./config/phpmyadmin:/etc/phpmyadmin/conf.d
+    depends_on:
+      - mariadb
+    networks:
+      - ium-network
+
+networks:
+  ium-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:

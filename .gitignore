@@ -1,0 +1,60 @@
+# Data directories
+data/mysql/*
+data/redis/*
+!data/.gitkeep
+
+# Log files
+logs/apache/*
+!logs/.gitkeep
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Environment specific
+.env
+.env.local
+.env.*.local
+
+# Application specific
+www/php*/*/vendor/
+www/php*/*/node_modules/
+www/php*/*/.env
+www/php*/*/storage/logs/*
+www/php*/*/storage/framework/cache/*
+www/php*/*/storage/framework/sessions/*
+www/php*/*/storage/framework/views/*
+www/php*/*/bootstrap/cache/*
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Docker
+.dockerignore
+
+# Composer
+composer.phar
+composer.lock
+
+# NPM
+package-lock.json
+yarn.lock

@@ -1,0 +1,151 @@
+FROM ubuntu:22.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Update package lists and install essential packages
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    curl \
+    wget \
+    unzip \
+    git \
+    vim \
+    supervisor \
+    apache2 \
+    ca-certificates \
+    lsb-release \
+    gnupg2
+
+# Add Ondrej's PHP repository for multiple PHP versions
+RUN add-apt-repository ppa:ondrej/php -y && apt-get update
+
+# Install PHP 7.4 and extensions
+RUN apt-get install -y \
+    php7.4 \
+    php7.4-fpm \
+    php7.4-cli \
+    php7.4-common \
+    php7.4-mysql \
+    php7.4-zip \
+    php7.4-gd \
+    php7.4-mbstring \
+    php7.4-curl \
+    php7.4-xml \
+    php7.4-bcmath \
+    php7.4-json \
+    php7.4-xsl \
+    php7.4-intl \
+    php7.4-soap \
+    php7.4-redis \
+    php7.4-imagick \
+    php7.4-dev \
+    php7.4-opcache \
+    php7.4-readline \
+    php7.4-sqlite3 \
+    php7.4-tokenizer \
+    php7.4-apcu \
+    php7.4-bz2 \
+    php7.4-calendar \
+    php7.4-exif \
+    php7.4-ftp \
+    php7.4-gmp \
+    php7.4-iconv \
+    php7.4-sockets \
+    php7.4-sysvmsg \
+    php7.4-sysvsem \
+    php7.4-sysvshm \
+    php7.4-xmlrpc \
+    php7.4-xdebug
+
+# Install PHP 8.4 and extensions
+RUN apt-get install -y \
+    php8.4 \
+    php8.4-fpm \
+    php8.4-cli \
+    php8.4-common \
+    php8.4-mysql \
+    php8.4-zip \
+    php8.4-gd \
+    php8.4-mbstring \
+    php8.4-curl \
+    php8.4-xml \
+    php8.4-bcmath \
+    php8.4-xsl \
+    php8.4-intl \
+    php8.4-soap \
+    php8.4-redis \
+    php8.4-imagick \
+    php8.4-dev \
+    php8.4-opcache \
+    php8.4-readline \
+    php8.4-sqlite3 \
+    php8.4-tokenizer \
+    php8.4-apcu \
+    php8.4-bz2 \
+    php8.4-calendar \
+    php8.4-exif \
+    php8.4-ftp \
+    php8.4-gmp \
+    php8.4-iconv \
+    php8.4-sockets \
+    php8.4-sysvmsg \
+    php8.4-sysvsem \
+    php8.4-sysvshm \
+    php8.4-xmlrpc \
+    php8.4-xdebug
+
+# Install Composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+# Verify PHP installations and enable necessary extensions
+RUN php7.4 -m | grep -i phar || echo "phar extension missing for PHP 7.4"
+RUN php8.4 -m | grep -i phar || echo "phar extension missing for PHP 8.4"
+
+# Create symlinks for easier access
+RUN ln -sf /usr/bin/php7.4 /usr/local/bin/php74
+RUN ln -sf /usr/bin/php8.4 /usr/local/bin/php84
+
+# Enable Apache modules
+RUN a2enmod rewrite proxy proxy_fcgi setenvif headers ssl
+
+# Enable PHP-FPM configs in Apache
+RUN a2enconf php7.4-fpm php8.4-fpm
+
+# Create PHP-FPM socket directories
+RUN mkdir -p /var/run/php
+
+# Create PHP log directories
+RUN mkdir -p /var/log/php/7.4 /var/log/php/8.4
+RUN chown -R www-data:www-data /var/log/php
+
+# Copy custom Apache configuration
+COPY config/apache/000-default.conf /etc/apache2/sites-available/000-default.conf
+COPY config/apache/apache2.conf /etc/apache2/apache2.conf
+
+# Copy PHP configuration files
+COPY config/php74/cli/conf.d/99-custom.ini /etc/php/7.4/cli/conf.d/99-custom.ini
+COPY config/php74/fpm/conf.d/99-custom.ini /etc/php/7.4/fpm/conf.d/99-custom.ini
+COPY config/php74/fpm/php-fpm.conf /etc/php/7.4/fpm/php-fpm.conf
+COPY config/php74/fpm/pool.d/www.conf /etc/php/7.4/fpm/pool.d/www.conf
+
+COPY config/php84/cli/conf.d/99-custom.ini /etc/php/8.4/cli/conf.d/99-custom.ini
+COPY config/php84/fpm/conf.d/99-custom.ini /etc/php/8.4/fpm/conf.d/99-custom.ini
+COPY config/php84/fpm/php-fpm.conf /etc/php/8.4/fpm/php-fpm.conf
+COPY config/php84/fpm/pool.d/www.conf /etc/php/8.4/fpm/pool.d/www.conf
+
+# Copy supervisor configuration
+COPY config/supervisor/supervisord.conf /etc/supervisor/supervisord.conf
+
+# Create directories for applications
+RUN mkdir -p /var/www/html/php74 /var/www/html/php84
+
+# Set proper permissions
+RUN chown -R www-data:www-data /var/www/html
+RUN chmod -R 755 /var/www/html
+
+# Expose ports
+EXPOSE 80 443
+
+# Start supervisor (which will manage Apache and PHP-FPM)
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
