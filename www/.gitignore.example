@@ -1,0 +1,56 @@
+# Laravel Application .gitignore
+# Copy this file to your Laravel app root directory
+
+/vendor/
+/node_modules/
+/public/hot
+/public/storage
+/storage/*.key
+/storage/app/*
+!/storage/app/public/
+/storage/debugbar/
+.env
+.env.backup
+.env.production
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+npm-debug.log
+yarn-error.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build artifacts
+/public/build/
+/public/mix-manifest.json
+mix-manifest.json
+
+# Dependencies
+composer.lock
+package-lock.json
+yarn.lock
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+/tests/coverage/
+/coverage/
+
+# Uploads
+/public/uploads/
+/storage/app/public/uploads/
+
+# Backup files
+*.bak
+*.backup
+*.orig

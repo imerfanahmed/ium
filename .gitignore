@@ -37,11 +37,93 @@ Thumbs.db
 www/php*/*/vendor/
 www/php*/*/node_modules/
 www/php*/*/.env
+www/php*/*/.env.*
 www/php*/*/storage/logs/*
 www/php*/*/storage/framework/cache/*
 www/php*/*/storage/framework/sessions/*
 www/php*/*/storage/framework/views/*
 www/php*/*/bootstrap/cache/*
+
+# Laravel specific
+www/php*/*/public/hot
+www/php*/*/public/storage
+www/php*/*/storage/*.key
+www/php*/*/storage/app/*
+!www/php*/*/storage/app/public/
+www/php*/*/storage/debugbar/
+www/php*/*/Homestead.json
+www/php*/*/Homestead.yaml
+www/php*/*/npm-debug.log
+www/php*/*/yarn-error.log
+
+# Build artifacts and compiled assets
+www/php*/*/public/build/
+www/php*/*/public/mix-manifest.json
+www/php*/*/public/js/
+www/php*/*/public/css/
+www/php*/*/mix-manifest.json
+
+# IDE and editor files for apps
+www/php*/*/.vscode/
+www/php*/*/.idea/
+www/php*/*/*.swp
+www/php*/*/*.swo
+www/php*/*/*~
+
+# Test and coverage files
+www/php*/*/tests/coverage/
+www/php*/*/coverage/
+www/php*/*/.phpunit.result.cache
+www/php*/*/phpunit.xml
+
+# Dependency and package files
+www/php*/*/composer.phar
+www/php*/*/composer.lock
+www/php*/*/package-lock.json
+www/php*/*/yarn.lock
+
+# Application uploads and user content
+www/php*/*/storage/app/public/*
+!www/php*/*/storage/app/public/.gitignore
+www/php*/*/public/uploads/
+www/php*/*/public/images/uploads/
+
+# Configuration files that might contain sensitive data
+www/php*/*/config/database.php.backup
+www/php*/*/config/*.local.php
+
+# Cache and temporary files
+www/php*/*/*.log
+www/php*/*/*.tmp
+www/php*/*/*.cache
+www/php*/*/temp/
+
+# Applications directly in www directory
+www/*/vendor/
+www/*/node_modules/
+www/*/.env
+www/*/.env.*
+www/*/storage/logs/*
+www/*/storage/framework/cache/*
+www/*/storage/framework/sessions/*
+www/*/storage/framework/views/*
+www/*/bootstrap/cache/*
+www/*/public/hot
+www/*/public/storage
+www/*/storage/*.key
+www/*/.vscode/
+www/*/.idea/
+www/*/composer.lock
+www/*/package-lock.json
+www/*/yarn.lock
+
+# Keep essential files
+!www/index.php
+!www/find-app.php
+!www/test.php
+
+# Ignore test applications (but keep as examples in git)
+www/php*/laravel-test/
 
 # Backup files
 *.bak
