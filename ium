@@ -296,6 +296,44 @@ reborn_containers() {
     fi
 }
 
+# Function to reload services with updated configuration
+reload_services() {
+    print_info "Reloading IUM services with updated configuration..."
+    
+    if ! docker compose version &> /dev/null; then
+        print_error "Docker Compose is not available. Please ensure Docker is installed and running."
+        exit 1
+    fi
+    
+    cd "$DOCKER_COMPOSE_DIR"
+    
+    print_info "Restarting containers to apply configuration changes..."
+    docker compose restart
+    
+    # Wait for services to initialize
+    print_info "Waiting for services to initialize..."
+    sleep 5
+    
+    # Reload Apache configuration
+    print_info "Reloading Apache configuration..."
+    docker exec "$CONTAINER_NAME" supervisorctl reload || print_warning "Failed to reload supervisor - services may need manual restart"
+    
+    # Restart PHP-FPM services
+    print_info "Restarting PHP-FPM services..."
+    docker exec "$CONTAINER_NAME" supervisorctl restart php7.4-fpm || print_warning "Failed to restart PHP 7.4 FPM"
+    docker exec "$CONTAINER_NAME" supervisorctl restart php8.4-fpm || print_warning "Failed to restart PHP 8.4 FPM"
+    
+    # Restart Apache
+    print_info "Restarting Apache..."
+    docker exec "$CONTAINER_NAME" supervisorctl restart apache2 || print_warning "Failed to restart Apache"
+    
+    print_success "Configuration reload completed!"
+    print_info "Updated configuration files are now active"
+    
+    # Update hosts file too
+    update_hosts_file
+}
+
 # Function to update hosts file
 update_hosts_file() {
     print_info "Scanning for applications..."
@@ -356,7 +394,7 @@ show_help() {
     echo "  ium wake                Start all containers"
     echo "  ium sleep               Stop all containers"
     echo "  ium reborn              Rebuild and restart all containers"
-    echo "  ium reload              Update hosts file with .local domains"
+    echo "  ium reload              Reload services with updated configuration and hosts"
     echo "  ium status              Show environment status"
     echo "  ium help                Show this help message"
     echo ""
@@ -375,7 +413,7 @@ show_help() {
     echo "  ium git status          Check git status"
     echo "  ium ls -la              List files in container"
     echo "  ium bash                Open interactive shell"
-    echo "  ium reload              Scan apps and update hosts file"
+    echo "  ium reload              Restart services with updated config files"
     echo "  ium sleep               Stop all services"
     echo ""
     echo "Notes:"
@@ -443,7 +481,7 @@ main() {
             reborn_containers
             ;;
         "reload")
-            update_hosts_file
+            reload_services
             ;;
         "help"|"--help"|"-h")
             show_help

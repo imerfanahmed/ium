@@ -9,10 +9,19 @@ services:
       - "443:443"
     volumes:
       - ./www:/var/www/html
-      - ./config/apache:/etc/apache2/sites-available
-      - ./config/php74:/etc/php/7.4
-      - ./config/php84:/etc/php/8.4
+      - ./config/apache/000-default.conf:/etc/apache2/sites-available/000-default.conf
+      - ./config/apache/apache2.conf:/etc/apache2/apache2.conf
+      - ./config/php74/cli/conf.d/99-custom.ini:/etc/php/7.4/cli/conf.d/99-custom.ini
+      - ./config/php74/fpm/conf.d/99-custom.ini:/etc/php/7.4/fpm/conf.d/99-custom.ini
+      - ./config/php74/fpm/php-fpm.conf:/etc/php/7.4/fpm/php-fpm.conf
+      - ./config/php74/fpm/pool.d/www.conf:/etc/php/7.4/fpm/pool.d/www.conf
+      - ./config/php84/cli/conf.d/99-custom.ini:/etc/php/8.4/cli/conf.d/99-custom.ini
+      - ./config/php84/fpm/conf.d/99-custom.ini:/etc/php/8.4/fpm/conf.d/99-custom.ini
+      - ./config/php84/fpm/php-fpm.conf:/etc/php/8.4/fpm/php-fpm.conf
+      - ./config/php84/fpm/pool.d/www.conf:/etc/php/8.4/fpm/pool.d/www.conf
+      - ./config/supervisor/supervisord.conf:/etc/supervisor/supervisord.conf
       - ./logs/apache:/var/log/apache2
+      - ./logs/php:/var/log/php
     environment:
       - APACHE_RUN_USER=www-data
       - APACHE_RUN_GROUP=www-data
