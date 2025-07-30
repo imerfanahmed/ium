@@ -314,24 +314,144 @@ reload_services() {
     print_info "Waiting for services to initialize..."
     sleep 5
     
-    # Reload Apache configuration
+    # Gracefully reload services without forcing restarts
+    print_info "Reloading configuration and services..."
+    
+    # First, update supervisor configuration
+    docker exec "$CONTAINER_NAME" supervisorctl reread 2>/dev/null || true
+    docker exec "$CONTAINER_NAME" supervisorctl update 2>/dev/null || true
+    
+    # Check and start services if needed (don't force restart if already running)
+    print_info "Ensuring services are running..."
+    
+    # Check PHP 7.4 FPM
+    if ! docker exec "$CONTAINER_NAME" supervisorctl status php7.4-fpm | grep -q "RUNNING"; then
+        print_info "Starting PHP 7.4 FPM..."
+        docker exec "$CONTAINER_NAME" supervisorctl start php7.4-fpm 2>/dev/null || true
+    else
+        print_success "PHP 7.4 FPM is running"
+    fi
+    
+    # Check PHP 8.4 FPM
+    if ! docker exec "$CONTAINER_NAME" supervisorctl status php8.4-fpm | grep -q "RUNNING"; then
+        print_info "Starting PHP 8.4 FPM..."
+        docker exec "$CONTAINER_NAME" supervisorctl start php8.4-fpm 2>/dev/null || true
+    else
+        print_success "PHP 8.4 FPM is running"
+    fi
+    
+    # Check Apache - if not running via supervisor, start it directly
+    if ! docker exec "$CONTAINER_NAME" supervisorctl status apache2 | grep -q "RUNNING"; then
+        print_info "Starting Apache..."
+        # Try supervisor first, if that fails, start directly
+        if ! docker exec "$CONTAINER_NAME" supervisorctl start apache2 2>/dev/null; then
+            print_info "Starting Apache directly..."
+            docker exec "$CONTAINER_NAME" apache2ctl start 2>/dev/null || true
+        fi
+    else
+        print_success "Apache is running"
+    fi
+    
+    # Reload Apache configuration without restarting
     print_info "Reloading Apache configuration..."
-    docker exec "$CONTAINER_NAME" supervisorctl reload || print_warning "Failed to reload supervisor - services may need manual restart"
+    docker exec "$CONTAINER_NAME" apache2ctl graceful 2>/dev/null || print_warning "Could not gracefully reload Apache"
     
-    # Restart PHP-FPM services
-    print_info "Restarting PHP-FPM services..."
-    docker exec "$CONTAINER_NAME" supervisorctl restart php7.4-fpm || print_warning "Failed to restart PHP 7.4 FPM"
-    docker exec "$CONTAINER_NAME" supervisorctl restart php8.4-fpm || print_warning "Failed to restart PHP 8.4 FPM"
-    
-    # Restart Apache
-    print_info "Restarting Apache..."
-    docker exec "$CONTAINER_NAME" supervisorctl restart apache2 || print_warning "Failed to restart Apache"
+    # Final status check
+    print_info "Service status check..."
+    docker exec "$CONTAINER_NAME" supervisorctl status
     
     print_success "Configuration reload completed!"
     print_info "Updated configuration files are now active"
     
     # Update hosts file too
     update_hosts_file
+}
+
+# Function to completely uninstall IUM environment
+uninstall_environment() {
+    print_warning "This will completely remove the IUM development environment!"
+    print_warning "This includes:"
+    print_warning "  - All Docker containers and images"
+    print_warning "  - All volumes and data (databases, files, etc.)"
+    print_warning "  - Hosts file entries for .local domains"
+    print_warning "  - NOTE: Your application code in www/ directory will NOT be deleted"
+    echo ""
+    
+    # Confirmation prompt
+    echo -n "Are you sure you want to uninstall? Type 'yes' to confirm: "
+    read -r confirmation
+    
+    if [[ "$confirmation" != "yes" ]]; then
+        print_info "Uninstall cancelled"
+        return
+    fi
+    
+    cd "$DOCKER_COMPOSE_DIR"
+    
+    print_info "Stopping and removing containers..."
+    if docker compose ps --services 2>/dev/null | grep -q .; then
+        docker compose down --volumes --remove-orphans 2>/dev/null || true
+    fi
+    
+    print_info "Removing Docker images..."
+    # Remove IUM-specific images
+    docker images --format "table {{.Repository}}:{{.Tag}}" | grep -E "^ium-|^localhost.*ium" | while read -r image; do
+        if [[ -n "$image" && "$image" != "REPOSITORY:TAG" ]]; then
+            print_info "Removing image: $image"
+            docker rmi "$image" 2>/dev/null || true
+        fi
+    done
+    
+    # Remove any dangling volumes
+    print_info "Removing unused volumes..."
+    docker volume prune -f 2>/dev/null || true
+    
+    # Clean up hosts file
+    print_info "Cleaning up hosts file entries..."
+    remove_hosts_entries
+    
+    # Clean up data directories (but preserve structure)
+    print_info "Cleaning up data directories..."
+    if [[ -d "data/mysql" ]]; then
+        rm -rf data/mysql/* 2>/dev/null || true
+    fi
+    if [[ -d "data/redis" ]]; then
+        rm -rf data/redis/* 2>/dev/null || true
+    fi
+    if [[ -d "logs" ]]; then
+        rm -rf logs/apache/* 2>/dev/null || true
+    fi
+    
+    print_success "IUM development environment has been completely uninstalled!"
+    print_info "Your application code in the www/ directory has been preserved"
+    print_info "To reinstall, run: ./ium wake"
+}
+
+# Function to remove hosts file entries
+remove_hosts_entries() {
+    if [[ ! -w "$HOSTS_FILE" ]]; then
+        print_info "Requesting sudo access to modify $HOSTS_FILE"
+        sudo -v
+    fi
+    
+    # Create temporary file without IUM entries
+    local temp_hosts=$(mktemp)
+    
+    # Copy hosts file without IUM section
+    awk "
+        /^${IUM_MARKER}/,/^${IUM_MARKER} END/ { next }
+        { print }
+    " "$HOSTS_FILE" > "$temp_hosts"
+    
+    # Replace hosts file
+    if [[ -w "$HOSTS_FILE" ]]; then
+        cp "$temp_hosts" "$HOSTS_FILE"
+    else
+        sudo cp "$temp_hosts" "$HOSTS_FILE"
+    fi
+    
+    rm "$temp_hosts"
+    print_success "Removed .local domain entries from hosts file"
 }
 
 # Function to update hosts file
@@ -402,10 +522,14 @@ show_help() {
     echo "  ium wake                Start the development environment"
     echo "  ium sleep               Stop the development environment"
     echo "  ium reborn              Rebuild containers from scratch"
+    echo "  ium reload              Restart services with updated config files"
+    echo "  ium uninstall           Completely remove IUM environment"
     echo ""
     echo "Examples:"
     echo "  ium wake                Start all services"
     echo "  ium reborn              Rebuild after Dockerfile changes"
+    echo "  ium reload              Restart services with updated config files"
+    echo "  ium uninstall           Completely remove environment"
     echo "  ium php -v              Show PHP version"
     echo "  ium php artisan about   Run Laravel Artisan command"
     echo "  ium composer install    Install Composer dependencies"
@@ -413,7 +537,6 @@ show_help() {
     echo "  ium git status          Check git status"
     echo "  ium ls -la              List files in container"
     echo "  ium bash                Open interactive shell"
-    echo "  ium reload              Restart services with updated config files"
     echo "  ium sleep               Stop all services"
     echo ""
     echo "Notes:"
@@ -482,6 +605,9 @@ main() {
             ;;
         "reload")
             reload_services
+            ;;
+        "uninstall")
+            uninstall_environment
             ;;
         "help"|"--help"|"-h")
             show_help
