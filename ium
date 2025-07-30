@@ -296,6 +296,299 @@ reborn_containers() {
     fi
 }
 
+# Function to perform comprehensive health check
+health_check() {
+    print_info "IUM Development Environment Health Check"
+    echo ""
+    
+    local overall_status=0
+    local issues=()
+    
+    # Check Docker and Docker Compose
+    print_info "🐳 Checking Docker Environment..."
+    if ! docker --version &> /dev/null; then
+        print_error "Docker is not installed or not running"
+        issues+=("Docker not available")
+        overall_status=1
+    else
+        local docker_version=$(docker --version | cut -d' ' -f3 | tr -d ',')
+        print_success "Docker $docker_version is available"
+    fi
+    
+    if ! docker compose version &> /dev/null; then
+        print_error "Docker Compose is not available"
+        issues+=("Docker Compose not available")
+        overall_status=1
+    else
+        local compose_version=$(docker compose version --short)
+        print_success "Docker Compose $compose_version is available"
+    fi
+    echo ""
+    
+    # Check if we're in IUM directory
+    print_info "📁 Checking IUM Environment..."
+    if [[ ! -f "$DOCKER_COMPOSE_DIR/docker-compose.yml" ]]; then
+        print_error "IUM docker-compose.yml not found in $DOCKER_COMPOSE_DIR"
+        issues+=("Not in IUM directory")
+        overall_status=1
+        return $overall_status
+    else
+        print_success "IUM environment directory found"
+    fi
+    
+    # Check required directories
+    for dir in "www" "config" "data" "logs"; do
+        if [[ ! -d "$DOCKER_COMPOSE_DIR/$dir" ]]; then
+            print_warning "Directory missing: $dir"
+            issues+=("Missing directory: $dir")
+        else
+            print_success "Directory exists: $dir"
+        fi
+    done
+    echo ""
+    
+    # Check Docker containers
+    print_info "🐳 Checking Docker Containers..."
+    cd "$DOCKER_COMPOSE_DIR"
+    
+    local expected_containers=("ium-php-apache" "ium-mariadb" "ium-redis" "ium-mailpit" "ium-phpmyadmin")
+    local running_containers=()
+    
+    for container in "${expected_containers[@]}"; do
+        if docker ps --format "table {{.Names}}" | grep -q "^$container$"; then
+            print_success "Container running: $container"
+            running_containers+=("$container")
+        else
+            print_error "Container not running: $container"
+            issues+=("Container down: $container")
+            overall_status=1
+        fi
+    done
+    echo ""
+    
+    # If main container is running, check internal services
+    if [[ " ${running_containers[@]} " =~ " ium-php-apache " ]]; then
+        print_info "🔧 Checking Internal Services..."
+        
+        # Check supervisor services
+        local supervisor_status=$(docker exec "$CONTAINER_NAME" supervisorctl status 2>/dev/null || echo "FAILED")
+        if [[ "$supervisor_status" == "FAILED" ]]; then
+            print_error "Cannot connect to supervisor"
+            issues+=("Supervisor not accessible")
+            overall_status=1
+        else
+            # Parse supervisor status
+            while IFS= read -r line; do
+                if [[ "$line" =~ ^([^[:space:]]+)[[:space:]]+([^[:space:]]+) ]]; then
+                    local service="${BASH_REMATCH[1]}"
+                    local status="${BASH_REMATCH[2]}"
+                    if [[ "$status" == "RUNNING" ]]; then
+                        print_success "Service running: $service"
+                    else
+                        print_error "Service $service: $status"
+                        issues+=("Service issue: $service ($status)")
+                        overall_status=1
+                    fi
+                fi
+            done <<< "$supervisor_status"
+        fi
+        echo ""
+        
+        # Check PHP versions
+        print_info "🐘 Checking PHP Versions..."
+        if docker exec "$CONTAINER_NAME" php7.4 --version &> /dev/null; then
+            local php74_version=$(docker exec "$CONTAINER_NAME" php7.4 --version | head -1 | cut -d' ' -f2)
+            print_success "PHP 7.4: $php74_version"
+        else
+            print_error "PHP 7.4 not working"
+            issues+=("PHP 7.4 not functional")
+            overall_status=1
+        fi
+        
+        if docker exec "$CONTAINER_NAME" php8.4 --version &> /dev/null; then
+            local php84_version=$(docker exec "$CONTAINER_NAME" php8.4 --version | head -1 | cut -d' ' -f2)
+            print_success "PHP 8.4: $php84_version"
+        else
+            print_error "PHP 8.4 not working"
+            issues+=("PHP 8.4 not functional")
+            overall_status=1
+        fi
+        echo ""
+        
+        # Check Node.js and npm
+        print_info "🟢 Checking Node.js Environment..."
+        if docker exec "$CONTAINER_NAME" node --version &> /dev/null; then
+            local node_version=$(docker exec "$CONTAINER_NAME" node --version)
+            print_success "Node.js: $node_version"
+        else
+            print_error "Node.js not working"
+            issues+=("Node.js not functional")
+            overall_status=1
+        fi
+        
+        if docker exec "$CONTAINER_NAME" npm --version &> /dev/null; then
+            local npm_version=$(docker exec "$CONTAINER_NAME" npm --version)
+            print_success "npm: v$npm_version"
+        else
+            print_error "npm not working"
+            issues+=("npm not functional")
+            overall_status=1
+        fi
+        echo ""
+        
+        # Check Composer
+        print_info "🎼 Checking Composer..."
+        if docker exec "$CONTAINER_NAME" /usr/local/bin/composer --version &> /dev/null; then
+            local composer_version=$(docker exec "$CONTAINER_NAME" /usr/local/bin/composer --version | cut -d' ' -f3)
+            print_success "Composer: $composer_version"
+        else
+            print_error "Composer not working"
+            issues+=("Composer not functional")
+            overall_status=1
+        fi
+        echo ""
+        
+        # Check Apache configuration
+        print_info "🌐 Checking Apache Configuration..."
+        local apache_test=$(docker exec "$CONTAINER_NAME" apache2ctl configtest 2>&1 || echo "FAILED")
+        if [[ "$apache_test" =~ "Syntax OK" ]]; then
+            print_success "Apache configuration is valid"
+        else
+            print_error "Apache configuration has issues"
+            issues+=("Apache config invalid")
+            overall_status=1
+        fi
+        echo ""
+    fi
+    
+    # Check database connectivity
+    if [[ " ${running_containers[@]} " =~ " ium-mariadb " ]]; then
+        print_info "🗄️ Checking Database Connectivity..."
+        if docker exec ium-mariadb mariadb -uroot -proot -e "SELECT 1" &> /dev/null; then
+            print_success "MariaDB connection successful"
+            
+            # Check if default database exists
+            if docker exec ium-mariadb mariadb -uroot -proot -e "USE ium_default; SELECT 1" &> /dev/null; then
+                print_success "Default database 'ium_default' exists"
+            else
+                print_warning "Default database 'ium_default' not found"
+                issues+=("Default database missing")
+            fi
+        else
+            print_error "Cannot connect to MariaDB"
+            issues+=("Database connection failed")
+            overall_status=1
+        fi
+        echo ""
+    fi
+    
+    # Check Redis connectivity
+    if [[ " ${running_containers[@]} " =~ " ium-redis " ]]; then
+        print_info "📦 Checking Redis Connectivity..."
+        if docker exec ium-redis redis-cli ping &> /dev/null; then
+            print_success "Redis connection successful"
+        else
+            print_error "Cannot connect to Redis"
+            issues+=("Redis connection failed")
+            overall_status=1
+        fi
+        echo ""
+    fi
+    
+    # Check web services
+    print_info "🌐 Checking Web Services..."
+    
+    # Check if localhost responds
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost/ | grep -q "200\|301\|302"; then
+        print_success "Apache web server responding"
+    else
+        print_error "Apache web server not responding on port 80"
+        issues+=("Web server not responding")
+        overall_status=1
+    fi
+    
+    # Check phpMyAdmin
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/ | grep -q "200"; then
+        print_success "phpMyAdmin accessible on port 8080"
+    else
+        print_warning "phpMyAdmin not accessible on port 8080"
+        issues+=("phpMyAdmin not accessible")
+    fi
+    
+    # Check Mailpit
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:8025/ | grep -q "200"; then
+        print_success "Mailpit web interface accessible on port 8025"
+    else
+        print_warning "Mailpit web interface not accessible on port 8025"
+        issues+=("Mailpit web interface not accessible")
+    fi
+    echo ""
+    
+    # Check applications and .local domains
+    print_info "🚀 Checking Applications..."
+    local apps=($(scan_applications))
+    if [[ ${#apps[@]} -gt 0 ]]; then
+        print_success "Found ${#apps[@]} applications: ${apps[*]}"
+        
+        # Test a few .local domains
+        for app in "${apps[@]:0:3}"; do  # Test first 3 apps
+            if curl -s -o /dev/null -w "%{http_code}" "http://$app.local/" | grep -q "200\|301\|302"; then
+                print_success "Application accessible: http://$app.local/"
+            else
+                print_warning "Application not accessible: http://$app.local/"
+                issues+=("App not accessible: $app.local")
+            fi
+        done
+    else
+        print_warning "No applications found in www/ directory"
+        issues+=("No applications found")
+    fi
+    echo ""
+    
+    # Check hosts file entries
+    print_info "🔗 Checking Hosts File..."
+    if grep -q "$IUM_MARKER" "$HOSTS_FILE" 2>/dev/null; then
+        local hosts_count=$(awk "/$IUM_MARKER/,/$IUM_MARKER END/ { if (/\.local/) count++ } END { print count+0 }" "$HOSTS_FILE")
+        print_success "Hosts file has $hosts_count .local domain entries"
+    else
+        print_warning "No IUM entries found in hosts file"
+        issues+=("No .local domains in hosts file")
+    fi
+    echo ""
+    
+    # Final summary
+    print_info "🏥 Health Check Summary"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    if [[ $overall_status -eq 0 ]]; then
+        print_success "🎉 All systems operational! IUM environment is healthy."
+        echo ""
+        print_info "Environment Details:"
+        echo "  • PHP 7.4 + PHP 8.4 + Node.js LTS ready"
+        echo "  • Apache + MariaDB + Redis running"
+        echo "  • phpMyAdmin + Mailpit accessible"
+        echo "  • All .local domains configured"
+        echo "  • Ready for development!"
+    else
+        print_error "⚠️  Issues detected in IUM environment"
+        echo ""
+        print_info "Problems found:"
+        for issue in "${issues[@]}"; do
+            echo "  • $issue"
+        done
+        echo ""
+        print_info "Suggested actions:"
+        echo "  • Run: ./ium wake    (to start stopped containers)"
+        echo "  • Run: ./ium reload  (to restart services)"
+        echo "  • Run: ./ium reborn  (to rebuild from scratch)"
+        echo "  • Check: docker compose logs (for detailed error logs)"
+    fi
+    
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    return $overall_status
+}
+
 # Function to reload services with updated configuration
 reload_services() {
     print_info "Reloading IUM services with updated configuration..."
@@ -515,6 +808,7 @@ show_help() {
     echo "  ium sleep               Stop all containers"
     echo "  ium reborn              Rebuild and restart all containers"
     echo "  ium reload              Reload services with updated configuration and hosts"
+    echo "  ium health              Comprehensive health check of all services"
     echo "  ium status              Show environment status"
     echo "  ium help                Show this help message"
     echo ""
@@ -523,12 +817,14 @@ show_help() {
     echo "  ium sleep               Stop the development environment"
     echo "  ium reborn              Rebuild containers from scratch"
     echo "  ium reload              Restart services with updated config files"
+    echo "  ium health              Check health of all services and components"
     echo "  ium uninstall           Completely remove IUM environment"
     echo ""
     echo "Examples:"
     echo "  ium wake                Start all services"
     echo "  ium reborn              Rebuild after Dockerfile changes"
     echo "  ium reload              Restart services with updated config files"
+    echo "  ium health              Check if everything is working properly"
     echo "  ium uninstall           Completely remove environment"
     echo "  ium php -v              Show PHP version"
     echo "  ium php artisan about   Run Laravel Artisan command"
@@ -608,6 +904,9 @@ main() {
             ;;
         "reload")
             reload_services
+            ;;
+        "health")
+            health_check
             ;;
         "uninstall")
             uninstall_environment
