@@ -1,5 +1,5 @@
 FROM ubuntu:22.04
-
+ENV DEBIAN_FRONTEND=noninteractive
 # Prevent interactive prompts during package installation
 # Note: Configuration files are now mounted as volumes for easy reloading
 # No need to copy configuration files during build - they're mounted at runtimeND=noninteractive
